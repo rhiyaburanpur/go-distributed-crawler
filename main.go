@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/rhiyaburanpur/go-distributed-crawler/internal/client"
@@ -11,42 +11,59 @@ import (
 )
 
 func main() {
-	log.Println("Phase 1: Single-Threaded Crawler Starting")
 
-	queue := crawler.NewURLQueue()
+	const maxCrawls = 10
+	const numWorkers = 5
+
 	visited := crawler.NewVisitedSet()
+	limiter := crawler.NewRateLimiter(1 * time.Second)
+	var wg sync.WaitGroup
 
-	seedURL := "http://example.com"
-	queue.Enqueue(seedURL)
-	visited.Add(seedURL)
+	urlCh := make(chan string, 100)
+	resultCh := make(chan []string, numWorkers)
 
-	count := 0
-	maxCrawls := 10
+	for i := 1; i <= numWorkers; i++ {
+		wg.Add(1)
+		go worker(i, urlCh, resultCh, &wg, limiter)
+	}
 
-	for !queue.IsEmpty() && count < maxCrawls {
-		currentURL := queue.Dequeue()
-		count++
+	workCount := 0
+	initialURL := "http://example.com"
 
-		log.Printf("Crawling (%d/%d): %s\n", count, maxCrawls, currentURL)
+	if visited.Add(initialURL) {
+		workCount++
+		urlCh <- initialURL
+	}
 
-		content, err := client.Fetch(currentURL)
-		if err != nil {
-			log.Printf("ERROR fetching %s: %v", currentURL, err)
-			continue
-		}
+	for workCount > 0 {
+		links := <-resultCh
+		workCount--
 
-		time.Sleep(1 * time.Second)
-
-		newLinks := util.ExtractLinks(content, currentURL)
-
-		for _, link := range newLinks {
+		for _, link := range links {
+			if visited.Len() >= maxCrawls {
+				break
+			}
 			if visited.Add(link) {
-				queue.Enqueue(link)
-				fmt.Printf("  -> Found new link: %s\n", link)
+				workCount++
+				urlCh <- link
 			}
 		}
 	}
+	close(urlCh)
+	wg.Wait()
+	log.Printf("Phase 2: Concurrent Crawling completed. Visited %d unique URLs.\n", visited.Len())
+}
 
-	log.Println("\nPhase 1: Single-Threaded Crawl Finished")
-	log.Printf("Total unique URLs processed: %d\n", count)
+func worker(id int, urlCh <-chan string, resultCh chan<- []string, wg *sync.WaitGroup, limiter *crawler.RateLimiter) {
+	defer wg.Done()
+
+	for currentURL := range urlCh {
+		limiter.Wait(currentURL)
+		content, err := client.Fetch(currentURL)
+		if err != nil {
+			continue
+		}
+		newLinks := util.ExtractLinks(content, currentURL)
+		resultCh <- newLinks
+	}
 }
