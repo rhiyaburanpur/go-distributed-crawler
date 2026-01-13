@@ -1,61 +1,81 @@
-# Go Web Crawler Core (Phase 1)
+# Distributed Web Crawler: Phase 2 - Concurrency and Rate Limiting
 
-## Project Goal
+## Project Overview
 
-The primary goal of this phase is to build the sequential core for an efficient web crawler. This involves implementing the foundational data structures and logic in Go to perform a Breadth-First Search (BFS) traversal of links, ensure URL uniqueness, and handle basic HTTP fetching and HTML parsing.
+Phase 2 transitions the crawler from a sequential, single-threaded execution model to a concurrent, multi-worker architecture. This implementation leverages Go’s concurrency primitives -> Goroutines and Channels, to execute network I/O and HTML parsing in parallel. A critical addition in this phase is the Host-Based Rate Limiter, which ensures the system adheres to politeness protocols by throttling requests on a per-domain basis.
 
-## Key Technologies (Phase 1)
+## Technical Specifications (Phase 2)
 
-| Category | Purpose | Technology/Tool | Rationale/Detail |
-| :--- | :--- | :--- | :--- |
-| **Technology** | **Language** | Go (Golang) | Used for its high **performance** and strong focus on data structure implementation. |
-| **Technology** | **Parsing** | `golang.org/x/net/html` | Chosen for robust **HTML parsing** and reliable link extraction. |
-| **DevOps** | **CI/CD** | GitHub Actions | Handles **Continuous Integration (CI)** to automatically validate build and test success. |
+| Specification | Implementation | Purpose |
+| :--- | :--- | :--- |
+| **Execution Model** | **Goroutine Worker Pool** | **Parallelized network requests and content processing.** |
+| **Communication** | **CSP (Communicating Sequential Processes)** | **Go channels facilitate data transfer between workers and the coordinator.** |
+| **Politeness** | **Token Bucket/Timestamp Mapping** | **Enforces time delays between requests to the same host.** |
+| **Synchronization** | **Sync Primitives** | **Mutexes and WaitGroups manage shared state and lifecycle orchestration.** |
 
-## Phase 1 Architecture: Monolithic Core
+## Architectural Design: Worker-Coordinator Pattern
 
-In this initial phase, the system operates as a single, sequential application (main.go). All logic—fetching, parsing, and link management—is executed in a single loop, acting as a core proof-of-concept for the future distributed system.
+The system has been refactored into two primary functional layers:
 
-**Core Components Implemented in Phase 1:**
+### 1. Central Coordinator
 
-* URL Queue: Implements the BFS order of operations.
+The coordinator, located in the main entry point, manages the global state of the crawl. It is responsible for:
 
-* Visited Set: A thread-safe data structure to enforce URL uniqueness and prevent cycles.
+* Maintaining the Visited Set to prevent redundant URL processing.
 
-* HTTP Client: Custom configuration for fetching web page content.
+* Tracking in-flight operations via an atomic work counter.
 
-* HTML Parser: Logic to extract absolute URLs from fetched HTML content.
+* Orchestrating the lifecycle of the worker pool.
 
-* Project Status: Phase 1 Complete
+* Closing communication channels once the termination criteria (max crawls or exhausted queue) are met.
 
-This phase successfully establishes the core logic and data structures required for web crawling:
+### 2. Concurrent Worker Pool
 
-| Component | Status | Location | Focus |
-| :--- | :--- | :--- | :--- |
-| **Core BFS Logic** | Complete | `main.go` | Sequential Breadth-First Search loop. |
-| **Data Structures** | Complete | `internal/crawler/` | Thread-safe URLQueue and VisitedSet. |
-| **HTTP Client** | Complete | `internal/client/http.go` | Custom client with sensible timeouts. |
-| **HTML Parser** | Complete | `internal/util/parser.go` | Link extraction and absolute URL resolution. |
-| **CI Workflow** | Implemented | `.github/workflows/go.yml` | Automatic build and test validation on commit. |
+The worker pool consists of independent Goroutines that perform the following operations:
 
-** Next Major Steps :**
- Phase 2 will introduce Goroutines, Channels, and the Politeness RateLimiter to transition this core into a multi-threaded, concurrent crawler.
+* Consuming URLs from the ingress channel.
 
- Getting Started (Phase 1 Test)
+* Querying the Rate Limiter to determine the necessary wait time for a specific host.
 
-To run the single-threaded crawler locally and confirm the core logic:
+* Executing HTTP requests via the internal client.
 
-Clone the repository:
+* Parsing HTML and returning extracted links to the coordinator through the egress channel.
 
+## Current Project Status
+
+| Component | Status | Implementation Detail |
+| :--- | :--- | :--- |
+| **Coordinator Logic** | **Complete** | **Efficiently manages BFS state and synchronization.** |
+| **Worker Pool** | **Complete** | **High-concurrency fetch/parse execution.** |
+| **Rate Limiter** | **Complete** | **Thread-safe per-host access tracking using sync.Mutex.** |
+| **Visited Set** | **Verified** | **Thread-safe set implementation for cycle detection.**| 
+| **CI/CD Integration** | **Active** | **Automated validation of concurrent builds via GitHub Actions.** |
+
+## Next Objectives
+
+The subsequent phase (Phase 3) will focus on system persistence and fault tolerance. Key tasks include:
+
+* Migrating the Visited Set from in-memory storage to a PostgreSQL database.
+
+* Implementing a persistent work queue for crawl resume capability.
+
+* Introducing exponential backoff for failed network requests.
+
+## Deployment and Testing (Phase 2) 
+
+
+To initialize the concurrent crawler and observe worker performance:
+
+1. Clone the repository and navigate to the project root.
+
+2. Initialize dependencies:
 ```
-git clone [your_repository_url]
-cd go-distributed-crawler
+go mod download
 ```
 
-Run the Phase 1 entry point:
+3. Execute the crawler:
 ```
 go run main.go
 ```
 
-
-(Note: This executes the sequential loop, fetches the seed URL, and stops after 10 unique links.)
+Note: The default configuration initializes 5 workers and a limit of 10 unique URLs. Progress and completion metrics will be reported via standard log output.
