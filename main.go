@@ -7,15 +7,22 @@ import (
 
 	"github.com/rhiyaburanpur/go-distributed-crawler/internal/client"
 	"github.com/rhiyaburanpur/go-distributed-crawler/internal/crawler"
+	"github.com/rhiyaburanpur/go-distributed-crawler/internal/storage"
 	"github.com/rhiyaburanpur/go-distributed-crawler/internal/util"
 )
 
 func main() {
-
+	const connStr = "postgres://crawler_user:crawler_pass@localhost:5432/crawler_metadata"
 	const maxCrawls = 10
 	const numWorkers = 5
 
-	visited := crawler.NewVisitedSet()
+	db, err := storage.NewPostgresDB(connStr)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	visited := crawler.NewVisitedSet(db)
 	limiter := crawler.NewRateLimiter(1 * time.Second)
 	var wg sync.WaitGroup
 
@@ -51,7 +58,7 @@ func main() {
 	}
 	close(urlCh)
 	wg.Wait()
-	log.Printf("Phase 2: Concurrent Crawling completed. Visited %d unique URLs.\n", visited.Len())
+	log.Printf("Phase 3: Persistent Crawling completed. Total unique URLs in DB: %d\n", visited.Len())
 }
 
 func worker(id int, urlCh <-chan string, resultCh chan<- []string, wg *sync.WaitGroup, limiter *crawler.RateLimiter) {

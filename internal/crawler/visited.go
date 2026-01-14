@@ -1,32 +1,32 @@
 package crawler
 
-import "sync"
+import (
+	"database/sql"
+)
 
 type VisitedSet struct {
-	urls map[string]struct{}
-	mu   sync.Mutex
+	db *sql.DB
 }
 
-func NewVisitedSet() *VisitedSet {
-	return &VisitedSet{
-		urls: make(map[string]struct{}),
-	}
+func NewVisitedSet(db *sql.DB) *VisitedSet {
+	return &VisitedSet{db: db}
 }
 
-func (v *VisitedSet) Add(url string) bool {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	if _, ok := v.urls[url]; ok {
+func (s *VisitedSet) Add(url string) bool {
+	query := `INSERT INTO crawled_urls (url) VALUES($1) ON CONFLICT (url) DO NOTHING`
+	result, err := s.db.Exec(query, url)
+	if err != nil {
 		return false
 	}
-
-	v.urls[url] = struct{}{}
-	return true
+	rows, _ := result.RowsAffected()
+	return rows > 0
 }
 
-func (v *VisitedSet) Len() int {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return len(v.urls)
+func (s *VisitedSet) Len() int {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM crawled_urls").Scan(&count)
+	if err != nil {
+		return 0
+	}
+	return count
 }
