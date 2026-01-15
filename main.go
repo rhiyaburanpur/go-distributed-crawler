@@ -31,7 +31,7 @@ func main() {
 
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
-		go worker(i, urlCh, resultCh, &wg, limiter)
+		go worker(i, urlCh, resultCh, &wg, limiter, visited)
 	}
 
 	workCount := 0
@@ -61,16 +61,39 @@ func main() {
 	log.Printf("Phase 3: Persistent Crawling completed. Total unique URLs in DB: %d\n", visited.Len())
 }
 
-func worker(id int, urlCh <-chan string, resultCh chan<- []string, wg *sync.WaitGroup, limiter *crawler.RateLimiter) {
+func worker(id int, urlCh <-chan string, resultCh chan<- []string, wg *sync.WaitGroup, limiter *crawler.RateLimiter, visited *crawler.VisitedSet) {
 	defer wg.Done()
-
 	for currentURL := range urlCh {
 		limiter.Wait(currentURL)
-		content, err := client.Fetch(currentURL)
-		if err != nil {
-			continue
+
+		var content string
+		var err error
+		delay := 1 * time.Second
+
+		for i := 0; i < 3; i++ {
+			content, err = client.Fetch(currentURL)
+			if err == nil {
+				break
+			}
+			time.Sleep(delay)
+			delay *= 2
 		}
-		newLinks := util.ExtractLinks(content, currentURL)
-		resultCh <- newLinks
+
+		statusCode := 200
+		errStr := ""
+		if err != nil {
+			statusCode = 0
+			errStr = err.Error()
+		}
+
+		visited.UpdateStatus(currentURL, statusCode, errStr)
+
+		// only extracting links if the fetch was successful
+		if err == nil {
+			newLinks := util.ExtractLinks(content, currentURL)
+			resultCh <- newLinks
+		} else {
+			resultCh <- []string{}
+		}
 	}
 }

@@ -30,3 +30,15 @@ func (s *VisitedSet) Len() int {
 	}
 	return count
 }
+
+func (s *VisitedSet) UpdateStatus(url string, statusCode int, errMsg string) error {
+	query := `
+    INSERT INTO crawled_urls (url, status_code, error_message)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (url) DO UPDATE SET
+        status_code = EXCLUDED.status_code,
+        error_message = EXCLUDED.error_message,
+        crawled_at = CURRENT_TIMESTAMP`
+	_, err := s.db.Exec(query, url, statusCode, errMsg)
+	return err
+}
