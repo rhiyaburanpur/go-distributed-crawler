@@ -1,0 +1,26 @@
+services:
+  app:
+    build: .
+    environment:
+      - DB_URL=postgres://crawler_user:crawler_pass@db:5432/crawler_metadata
+      - REDIS_URL=redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=crawler_user
+      - POSTGRES_PASSWORD=crawler_pass
+      - POSTGRES_DB=crawler_metadata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crawler_user -d crawler_metadata"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
