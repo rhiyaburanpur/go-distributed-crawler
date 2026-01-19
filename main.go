@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -13,8 +14,8 @@ import (
 )
 
 func main() {
-	const connStr = "postgres://crawler_user:crawler_pass@localhost:5432/crawler_metadata"
-	const redisAddr = "localhost:6379"
+	dbURL := getEnv("DB_URL", "postgres://crawler_user:crawler_pass@localhost:5432/crawler_metadata")
+	redisAddr := getEnv("REDIS_URL", "localhost:6379")
 	const maxCrawls = 15
 	const numWorkers = 5
 
@@ -27,7 +28,7 @@ func main() {
 	rdb.Del(ctx, "crawler:work_count")
 
 	// 3. Initialize Postgres
-	db, err := storage.NewPostgresDB(connStr)
+	db, err := storage.NewPostgresDB(dbURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -83,7 +84,7 @@ func main() {
 	// 8. Graceful Shutdown
 	close(urlCh)
 	wg.Wait()
-	log.Printf("Phase 5: Distributed Coordination started. Unique URLs in DB: %d\n", visited.Len())
+	log.Printf("Phase 6: Containerization and Scaling with Docker started. Unique URLs in DB: %d\n", visited.Len())
 }
 
 func worker(id int, urlCh <-chan string, resultCh chan<- []string, wg *sync.WaitGroup, limiter *crawler.RateLimiter, visited *crawler.VisitedSet) {
@@ -123,4 +124,11 @@ func worker(id int, urlCh <-chan string, resultCh chan<- []string, wg *sync.Wait
 			resultCh <- []string{}
 		}
 	}
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
 }
