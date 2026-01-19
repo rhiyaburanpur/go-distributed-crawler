@@ -1,81 +1,109 @@
-# Distributed Web Crawler: Phase 2 - Concurrency and Rate Limiting
+# Go Distributed Crawler
 
-## Project Overview
+A high-performance, scalable, and fault-tolerant web crawler built with Go. This project demonstrates distributed systems concepts including concurrent worker pools, rate limiting, persistent metadata storage, and cross-node coordination.
 
-Phase 2 transitions the crawler from a sequential, single-threaded execution model to a concurrent, multi-worker architecture. This implementation leverages Go’s concurrency primitives -> Goroutines and Channels, to execute network I/O and HTML parsing in parallel. A critical addition in this phase is the Host-Based Rate Limiter, which ensures the system adheres to politeness protocols by throttling requests on a per-domain basis.
+## Features
 
-## Technical Specifications (Phase 2)
+* Concurrent Worker Pool: Efficiently processes multiple URLs simultaneously using Go routines.
 
-| Specification | Implementation | Purpose |
-| :--- | :--- | :--- |
-| **Execution Model** | **Goroutine Worker Pool** | **Parallelized network requests and content processing.** |
-| **Communication** | **CSP (Communicating Sequential Processes)** | **Go channels facilitate data transfer between workers and the coordinator.** |
-| **Politeness** | **Token Bucket/Timestamp Mapping** | **Enforces time delays between requests to the same host.** |
-| **Synchronization** | **Sync Primitives** | **Mutexes and WaitGroups manage shared state and lifecycle orchestration.** |
+* Politeness and Rate Limiting: Per-host delay mechanism to prevent overwhelming target servers.
 
-## Architectural Design: Worker-Coordinator Pattern
+* Fault Tolerance: Implements exponential backoff for network retries and persists error metadata.
 
-The system has been refactored into two primary functional layers:
+* Distributed Coordination: Uses Redis to manage a global work queue and atomic counters, allowing multiple instances to work together.
 
-### 1. Central Coordinator
+* Persistent Storage: Saves crawl results and metadata to PostgreSQL with automatic schema migration.
 
-The coordinator, located in the main entry point, manages the global state of the crawl. It is responsible for:
+* Containerized Architecture: Fully orchestrated using Docker and Docker Compose for easy deployment and scaling.
 
-* Maintaining the Visited Set to prevent redundant URL processing.
+![Project Demo](assets/demo.gif)
 
-* Tracking in-flight operations via an atomic work counter.
+## Tech Stack
 
-* Orchestrating the lifecycle of the worker pool.
+* Language: Go 1.25+
 
-* Closing communication channels once the termination criteria (max crawls or exhausted queue) are met.
+* Database: PostgreSQL (Metadata and URL persistence)
 
-### 2. Concurrent Worker Pool
+* Coordination: Redis (Distributed queue and state management)
 
-The worker pool consists of independent Goroutines that perform the following operations:
+* Infrastructure: Docker & Docker Compose
 
-* Consuming URLs from the ingress channel.
+## Architecture
 
-* Querying the Rate Limiter to determine the necessary wait time for a specific host.
+The system consists of three primary components:
 
-* Executing HTTP requests via the internal client.
+1. Coordinator: Manages the global state, monitors the Redis work count, and feeds new discoveries back into the Redis queue.
 
-* Parsing HTML and returning extracted links to the coordinator through the egress channel.
+2. Workers: Independent nodes that pull URLs from Redis, respect rate limits, fetch content, and report results back.
 
-## Current Project Status
+3. Storage Layer: A modular persistence layer handling SQL (Postgres) and NoSQL (Redis) operations.
 
-| Component | Status | Implementation Detail |
-| :--- | :--- | :--- |
-| **Coordinator Logic** | **Complete** | **Efficiently manages BFS state and synchronization.** |
-| **Worker Pool** | **Complete** | **High-concurrency fetch/parse execution.** |
-| **Rate Limiter** | **Complete** | **Thread-safe per-host access tracking using sync.Mutex.** |
-| **Visited Set** | **Verified** | **Thread-safe set implementation for cycle detection.**| 
-| **CI/CD Integration** | **Active** | **Automated validation of concurrent builds via GitHub Actions.** |
+## Project Structure
 
-## Next Objectives
-
-The subsequent phase (Phase 3) will focus on system persistence and fault tolerance. Key tasks include:
-
-* Migrating the Visited Set from in-memory storage to a PostgreSQL database.
-
-* Implementing a persistent work queue for crawl resume capability.
-
-* Introducing exponential backoff for failed network requests.
-
-## Deployment and Testing (Phase 2) 
-
-
-To initialize the concurrent crawler and observe worker performance:
-
-1. Clone the repository and navigate to the project root.
-
-2. Initialize dependencies:
 ```
-go mod download
+.
+├── internal/
+│   ├── client/     # HTTP fetch logic
+│   ├── crawler/    # Politeness, visited set, and business logic
+│   ├── storage/    # Postgres and Redis connection/logic
+│   └── util/       # HTML parsing and link extraction
+├── Dockerfile      # Multi-stage build for the Go application
+├── docker-compose.yml # Service orchestration
+├── main.go         # Application entry point and coordination loop
+└── go.mod          # Dependency management
 ```
 
-3. Execute the crawler:
+## Getting Started
+
+### Prerequisites
+
+* Docker Desktop installed and running.
+
+* Go installed locally (for development/testing without containers).
+
+### Installation and Running
+
+1. Clone the repository:
 ```
-go run main.go
+git clone [https://github.com/rhiyaburanpur/go-distributed-crawler.git](https://github.com/rhiyaburanpur/go-distributed-crawler.git)
+cd go-distributed-crawler
 ```
 
-Note: The default configuration initializes 5 workers and a limit of 10 unique URLs. Progress and completion metrics will be reported via standard log output.
+2. Launch the entire stack using Docker Compose:
+```
+docker-compose up --build
+```
+
+3. The crawler will start with a seed URL and begin discovering links. You can monitor the progress in the terminal logs.
+
+### Scaling the Crawler
+
+To demonstrate the distributed nature of the system, you can scale the number of worker nodes with a single command:
+```
+docker-compose up --build --scale app=3
+```
+
+This starts three separate containers running the Go application, all pulling from the same Redis queue and writing to the same Postgres database.
+
+## Database Verification
+
+To check the crawled data inside the Postgres container:
+```
+docker exec -it go-distributed-crawler-db-1 psql -U crawler_user -d crawler_metadata -c "SELECT url, status_code, crawled_at FROM crawled_urls LIMIT 20;"
+```
+
+## Development Workflow
+
+This project was developed in six phases:
+
+1. Basic HTTP Fetcher and Link Extractor.
+
+2. Concurrent Worker Pool with Channels.
+
+3. Persistent Storage with PostgreSQL.
+
+4. Fault Tolerance and Rate Limiting.
+
+5. Distributed Coordination with Redis.
+
+6. Containerization and Orchestration.
