@@ -84,7 +84,7 @@ func main() {
 	// 8. Graceful Shutdown
 	close(urlCh)
 	wg.Wait()
-	log.Printf("Phase 6: Containerization and Scaling with Docker started. Unique URLs in DB: %d\n", visited.Len())
+	log.Printf("Phase 6: Containerization and Scaling with Docker Completed. Total unique URLs in DB: %d\n", visited.Len())
 }
 
 func worker(id int, urlCh <-chan string, resultCh chan<- []string, wg *sync.WaitGroup, limiter *crawler.RateLimiter, visited *crawler.VisitedSet) {
